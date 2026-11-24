@@ -27,17 +27,19 @@ jobs:
           dotnet-version: 10.0.x
       # ubuntu-latest also carries a newer SDK; build with 10.
       - run: dotnet new globaljson --sdk-version "$(dotnet --list-sdks | grep '^10\.' | tail -1 | cut -d' ' -f1)" --roll-forward latestFeature --force
-      - run: dotnet publish BrowserApis -c Release -o _publish/BrowserApis
+      - run: for x in BrowserApis WebWorkers; do dotnet publish $x -c Release -o _publish/$x; done
       - run: dotnet build Examples.Tests
       - run: pwsh Examples.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
       - run: dotnet test Examples.Tests --no-build
       - name: Assemble the site
         run: |
           mkdir -p _site
-          cp -r _publish/BrowserApis/wwwroot _site/BrowserApis
-          sed -i 's#<base href="/" />#<base href="/SpawnDev.Examples/BrowserApis/" />#' _site/BrowserApis/index.html
-          grep -q '/SpawnDev.Examples/BrowserApis/' _site/BrowserApis/index.html
-          rm -f _site/BrowserApis/index.html.br _site/BrowserApis/index.html.gz
+          for x in BrowserApis WebWorkers; do
+            cp -r _publish/$x/wwwroot _site/$x
+            sed -i "s#<base href=\"/\" />#<base href=\"/SpawnDev.Examples/$x/\" />#" _site/$x/index.html
+            grep -q "/SpawnDev.Examples/$x/" _site/$x/index.html
+            rm -f _site/$x/index.html.br _site/$x/index.html.gz
+          done
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -1,8 +1,4 @@
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.StaticFiles;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 
 namespace Examples.Tests;
@@ -30,20 +26,7 @@ public sealed class BrowserApisTests
     [ClassInitialize]
     public static async Task Init(TestContext _)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "BrowserApis"))) dir = dir.Parent;
-        var root = Path.Combine(dir!.FullName, "_publish", "BrowserApis", "wwwroot");
-        if (!File.Exists(Path.Combine(root, "index.html"))) throw new InvalidOperationException("Publish BrowserApis first: " + root);
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _app = builder.Build();
-        var files = new PhysicalFileProvider(root);
-        var types = new FileExtensionContentTypeProvider();
-        types.Mappings[".dat"] = "application/octet-stream";
-        _app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
-        _app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
-        await _app.StartAsync();
+        _app = await PublishedExample.StartAsync("BrowserApis");
         _url = _app.Urls.First();
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync();

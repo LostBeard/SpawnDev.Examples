@@ -1,0 +1,48 @@
+@page "/"
+@inject WebWorkerService Workers
+
+<main>
+    <h1>Count primes</h1>
+    <p>Ticks: <span id="ticks">@ticks</span></p>
+    <button id="here" disabled="@busy" @onclick="CountHere">Count on the page</button>
+    <button id="worker" disabled="@busy" @onclick="CountInWorker">Count in a worker</button>
+    <p id="result" role="status">@result</p>
+</main>
+
+@code {
+    const int Limit = 3_000_000;
+    int ticks;
+    bool busy;
+    string result = "";
+
+    protected override void OnInitialized() => _ = Tick();
+
+    // A visible heartbeat: it stops whenever the page is frozen.
+    async Task Tick()
+    {
+        while (true)
+        {
+            await Task.Delay(100);
+            ticks++;
+            StateHasChanged();
+        }
+    }
+
+    async Task CountHere()
+    {
+        busy = true;
+        result = "Counting...";
+        await Task.Delay(50); // let the page draw before it freezes
+        result = $"{Primes.Count(Limit)} primes";
+        busy = false;
+    }
+
+    async Task CountInWorker()
+    {
+        busy = true;
+        result = "Counting...";
+        var count = await Workers.TaskPool.Run(() => Primes.Count(Limit));
+        result = $"{count} primes";
+        busy = false;
+    }
+}

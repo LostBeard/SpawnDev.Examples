@@ -5,6 +5,7 @@ Small, complete projects for the articles on [spawndev.com](https://www.spawndev
 | Example | What it shows | Live demo |
 |---|---|---|
 | [BrowserApis](BrowserApis) | Screen wake lock, page visibility and clipboard from C# with [SpawnDev.SpawnJS](https://github.com/LostBeard/SpawnDev.SpawnJS) | [Open](https://lostbeard.github.io/SpawnDev.Examples/BrowserApis/) |
+| [WebWorkers](WebWorkers) | Slow C# in a Web Worker with [SpawnDev.SpawnJS.WebWorkers](https://github.com/LostBeard/SpawnDev.SpawnJS.WebWorkers) | [Open](https://lostbeard.github.io/SpawnDev.Examples/WebWorkers/) |
 
 ## Run an example
 
@@ -20,6 +21,7 @@ dotnet run
 
 ```bash
 dotnet publish BrowserApis -c Release -o _publish/BrowserApis
+dotnet publish WebWorkers -c Release -o _publish/WebWorkers
 dotnet build Examples.Tests
 pwsh Examples.Tests/bin/Debug/net10.0/playwright.ps1 install chromium
 dotnet test Examples.Tests
