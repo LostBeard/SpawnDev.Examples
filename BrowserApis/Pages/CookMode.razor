@@ -1,0 +1,129 @@
+@page "/"
+@inject SpawnJSRuntime JS
+@implements IAsyncDisposable
+
+<main>
+    <h1>Pancakes</h1>
+    <ul>
+        @foreach (var item in ingredients)
+        {
+            <li>@item</li>
+        }
+    </ul>
+    <button id="cook" @onclick="ToggleCookMode">@(cookMode ? "Stop cook mode" : "Start cook mode")</button>
+    <button id="copy" @onclick="CopyIngredients">Copy ingredients</button>
+    <p id="screen">Screen: @(screenLock is null ? "may sleep" : "staying on")</p>
+    <p id="status" role="status">@status</p>
+</main>
+
+@code {
+    readonly string[] ingredients = ["2 cups flour", "2 eggs", "1 1/2 cups milk", "1 tbsp sugar"];
+    Document? document;
+    WakeLockSentinel? screenLock;
+    bool cookMode;
+    string status = "";
+
+    protected override void OnInitialized()
+    {
+        document = JS.GetDocument();
+        document!.OnVisibilityChange += Document_OnVisibilityChange;
+    }
+
+    async Task ToggleCookMode()
+    {
+        cookMode = !cookMode;
+        if (cookMode) await KeepScreenOn();
+        else await LetScreenSleep();
+    }
+
+    async Task KeepScreenOn()
+    {
+        if (screenLock is not null) return;
+        using var navigator = new Navigator();
+        using var wakeLock = navigator.WakeLock;
+        if (wakeLock is null)
+        {
+            cookMode = false;
+            status = "This browser cannot keep the screen on.";
+            return;
+        }
+        try
+        {
+            var granted = await wakeLock.Request();
+            if (!cookMode || screenLock is not null)
+            {
+                // Stopped, or already locked, while the request was in flight.
+                await granted.Release();
+                granted.Dispose();
+                return;
+            }
+            screenLock = granted;
+            screenLock.OnRelease += ScreenLock_OnRelease;
+            status = "";
+        }
+        catch (Exception ex)
+        {
+            // The browser can refuse, for example on low battery.
+            cookMode = false;
+            status = $"The browser refused: {ex.Message}";
+        }
+    }
+
+    async Task LetScreenSleep()
+    {
+        var released = DetachLock();
+        if (released is null) return;
+        await released.Release();
+        released.Dispose();
+    }
+
+    // The browser releases the lock itself when the tab is hidden.
+    void ScreenLock_OnRelease()
+    {
+        DetachLock()?.Dispose();
+        StateHasChanged();
+    }
+
+    // Take the lock back when the visitor returns to the tab.
+    async void Document_OnVisibilityChange()
+    {
+        if (document is null || document.Hidden || !cookMode) return;
+        await KeepScreenOn();
+        StateHasChanged();
+    }
+
+    async Task CopyIngredients()
+    {
+        using var navigator = new Navigator();
+        using var clipboard = navigator.Clipboard;
+        try
+        {
+            await clipboard.WriteText(string.Join("\n", ingredients));
+            status = "Copied.";
+        }
+        catch (Exception ex)
+        {
+            status = $"Could not copy: {ex.Message}";
+        }
+    }
+
+    WakeLockSentinel? DetachLock()
+    {
+        var current = screenLock;
+        screenLock = null;
+        if (current is not null) current.OnRelease -= ScreenLock_OnRelease;
+        return current;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        cookMode = false;
+        if (document is not null)
+        {
+            document.OnVisibilityChange -= Document_OnVisibilityChange;
+            document.Dispose();
+            document = null;
+        }
+        await LetScreenSleep();
+    }
+}
