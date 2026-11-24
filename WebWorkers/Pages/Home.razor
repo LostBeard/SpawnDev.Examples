@@ -1,48 +1,65 @@
 @page "/"
+@using System.Diagnostics
 @inject WebWorkerService Workers
 
 <main>
-    <h1>Count primes</h1>
-    <p>Ticks: <span id="ticks">@ticks</span></p>
+    <h1>Does the clock stop?</h1>
+    <p>Each button counts the primes up to @Limit.ToString("N0"). It is the same C# method, run in two different places. Watch the clock while it works.</p>
+    <p id="clock">@clock</p>
     <button id="here" disabled="@busy" @onclick="CountHere">Count on the page</button>
     <button id="worker" disabled="@busy" @onclick="CountInWorker">Count in a worker</button>
     <p id="result" role="status">@result</p>
 </main>
 
 @code {
-    const int Limit = 3_000_000;
-    int ticks;
-    bool busy;
+    const int Limit = 6_000_000;
+    string clock = "";
     string result = "";
+    bool busy;
+    TimeSpan longestStop;
 
-    protected override void OnInitialized() => _ = Tick();
+    protected override void OnInitialized() => _ = RunClock();
 
-    // A visible heartbeat: it stops whenever the page is frozen.
-    async Task Tick()
+    // The clock runs on the page's thread, so it stops whenever that thread is busy.
+    async Task RunClock()
     {
+        var sinceUpdate = Stopwatch.StartNew();
         while (true)
         {
-            await Task.Delay(100);
-            ticks++;
+            clock = DateTime.Now.ToString("HH:mm:ss.fff");
             StateHasChanged();
+            await Task.Delay(30);
+            if (sinceUpdate.Elapsed > longestStop) longestStop = sinceUpdate.Elapsed;
+            sinceUpdate.Restart();
         }
     }
 
     async Task CountHere()
     {
-        busy = true;
-        result = "Counting...";
-        await Task.Delay(50); // let the page draw before it freezes
-        result = $"{Primes.Count(Limit)} primes";
-        busy = false;
+        await Start();
+        var count = Primes.Count(Limit);
+        await Finish(count);
     }
 
     async Task CountInWorker()
     {
+        await Start();
+        var count = await Workers.TaskPool.Run(() => Primes.Count(Limit));
+        await Finish(count);
+    }
+
+    async Task Start()
+    {
         busy = true;
         result = "Counting...";
-        var count = await Workers.TaskPool.Run(() => Primes.Count(Limit));
-        result = $"{count} primes";
+        await Task.Delay(100); // let the page draw before the work starts
+        longestStop = TimeSpan.Zero;
+    }
+
+    async Task Finish(int count)
+    {
+        await Task.Delay(100); // let the clock notice a stop that has just ended
+        result = $"Found {count:N0} primes. The clock's longest stop was {longestStop.TotalSeconds:F2} seconds.";
         busy = false;
     }
 }
