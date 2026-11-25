@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Playwright;
+using System.IO.Compression;
 using System.Text.RegularExpressions;
 
 namespace Examples.Tests;
@@ -8,14 +9,12 @@ namespace Examples.Tests;
 [TestClass]
 public sealed class ImageAITests
 {
-    static WebApplication _app = null!;
     static IPlaywright _playwright = null!;
     static IBrowser _browser = null!;
 
     [ClassInitialize]
     public static async Task Init(TestContext _)
     {
-        _app = await PublishedExample.StartAsync("ImageAI");
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync();
     }
@@ -25,7 +24,6 @@ public sealed class ImageAITests
     {
         await _browser.DisposeAsync();
         _playwright.Dispose();
-        await _app.DisposeAsync();
     }
 
     static async Task<string[]> Answers(IPage page)
@@ -38,8 +36,11 @@ public sealed class ImageAITests
     }
 
     [TestMethod]
-    public async Task Photos_AreRecognized_AndNothingLeavesTheDevice()
+    [DataRow(CompressionLevel.Optimal)] // smaller than the file, as GitHub Pages sends it
+    [DataRow(CompressionLevel.Fastest)] // larger than the file
+    public async Task Photos_AreRecognized_AndNothingLeavesTheDevice(CompressionLevel onnx)
     {
+        await using var app = await PublishedExample.StartAsync("ImageAI", onnx);
         var page = await _browser.NewPageAsync();
         var errors = new List<string>();
         var elsewhere = new List<string>();
@@ -47,10 +48,10 @@ public sealed class ImageAITests
         page.Console += (_, m) => { if (m.Type == "error" && !m.Text.Contains("404")) errors.Add(m.Text); };
         page.Request += (_, r) =>
         {
-            var local = r.Url.StartsWith(_app.Urls.First()) || r.Url.StartsWith("blob:") || r.Url.StartsWith("data:");
+            var local = r.Url.StartsWith(app.Urls.First()) || r.Url.StartsWith("blob:") || r.Url.StartsWith("data:");
             if (!local || r.Method != "GET") elsewhere.Add($"{r.Method} {r.Url}");
         };
-        await page.GotoAsync(_app.Urls.First());
+        await page.GotoAsync(app.Urls.First());
 
         await page.ClickAsync("#panda");
         var answers = await Answers(page);
