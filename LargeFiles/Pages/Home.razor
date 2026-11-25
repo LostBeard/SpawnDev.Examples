@@ -1,5 +1,6 @@
 @page "/"
 @inject SpawnJSRuntime JS
+@implements IAsyncDisposable
 
 <main>
     <h1>Where does the file go?</h1>
@@ -8,11 +9,20 @@
     <button id="copy" disabled="@busy" @onclick="() => Run(SaveThroughDotNet)">Save through .NET</button>
     <button id="stream" disabled="@busy" @onclick="() => Run(SaveStream)">Stream it</button>
     <p id="result" role="status">@result</p>
+    <h2>Play a video from storage</h2>
+    <p>Choose a video file above. It is saved to storage and played from there.</p>
+    <button id="play" disabled="@busy" @onclick="PlayFromStorage">Play it</button>
+    @if (videoUrl is not null)
+    {
+        <p><video id="video" src="@videoUrl" controls autoplay muted></video></p>
+    }
 </main>
 
 @code {
     const int SizeMB = 200;
     const string FileName = "test.bin";
+    const string VideoName = "video";
+    string? videoUrl;
     bool busy;
     string result = "";
 
@@ -64,6 +74,54 @@
         GC.Collect();
         busy = false;
     }
+
+    async Task PlayFromStorage()
+    {
+        using var file = GetChosenFile();
+        if (file is null)
+        {
+            result = "Choose a video file first.";
+            return;
+        }
+        busy = true;
+        await StopVideo();
+        try
+        {
+            using var navigator = new Navigator();
+            using var storage = navigator.Storage;
+            using var folder = await storage.GetDirectory();
+            using var handle = await folder.GetFileHandle(VideoName, create: true);
+            using var target = await handle.CreateWritable();
+
+            GC.Collect();
+            var before = GC.GetTotalMemory(true);
+            using var stream = file.Stream();
+            await stream.PipeTo(target);
+
+            using var saved = await handle.GetFile();
+            videoUrl = URL.CreateObjectURL(saved);
+            result = $"Playing {saved.Size / 1048576.0:F1} MB from storage. .NET memory grew by {Math.Max(0, GC.GetTotalMemory(false) - before) / 1048576.0:F1} MB.";
+        }
+        catch (Exception ex)
+        {
+            result = $"Could not play: {ex.Message}";
+        }
+        busy = false;
+    }
+
+    // An object URL keeps its file in use until it is revoked.
+    async Task StopVideo()
+    {
+        if (videoUrl is null) return;
+        URL.RevokeObjectURL(videoUrl);
+        videoUrl = null;
+        using var navigator = new Navigator();
+        using var storage = navigator.Storage;
+        using var folder = await storage.GetDirectory();
+        await folder.RemoveEntry(VideoName);
+    }
+
+    public async ValueTask DisposeAsync() => await StopVideo();
 
     Blob? GetChosenFile()
     {

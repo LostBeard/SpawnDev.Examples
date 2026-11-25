@@ -71,6 +71,53 @@ public sealed class LargeFilesTests
     public async Task Streamed_TakesAlmostNothing() => Assert.IsLessThan(5, await Save("#stream"));
 
     [TestMethod]
+    public async Task Video_PlaysFromStorage_WithoutEnteringDotNet()
+    {
+        var page = await _browser.NewPageAsync();
+        var errors = new List<string>();
+        page.PageError += (_, e) => errors.Add(e);
+        page.Console += (_, m) => { if (m.Type == "error") errors.Add(m.Text); };
+        await page.GotoAsync(_app.Urls.First());
+        await page.ClickAsync("#play");
+        await Assertions.Expect(page.Locator("#result")).ToHaveTextAsync("Choose a video file first.");
+        // A real video, recorded by the browser from a canvas.
+        var base64 = await page.EvaluateAsync<string>("""
+            async () => {
+                const canvas = Object.assign(document.createElement('canvas'), { width: 160, height: 90 });
+                const ctx = canvas.getContext('2d');
+                const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: 'video/webm' });
+                const chunks = [];
+                recorder.ondataavailable = e => chunks.push(e.data);
+                const stopped = new Promise(r => recorder.onstop = r);
+                recorder.start();
+                for (let i = 0; i < 30; i++) {
+                    ctx.fillStyle = `hsl(${i * 12} 100% 50%)`;
+                    ctx.fillRect(0, 0, 160, 90);
+                    await new Promise(r => setTimeout(r, 33));
+                }
+                recorder.stop();
+                await stopped;
+                const bytes = new Uint8Array(await new Blob(chunks).arrayBuffer());
+                let s = '';
+                for (const b of bytes) s += String.fromCharCode(b);
+                return btoa(s);
+            }
+            """);
+        await page.Locator("#pick").SetInputFilesAsync(new FilePayload { Name = "clip.webm", MimeType = "video/webm", Buffer = Convert.FromBase64String(base64) });
+        await page.ClickAsync("#play");
+        var result = page.Locator("#result");
+        await Assertions.Expect(result).ToContainTextAsync("from storage");
+        Console.WriteLine($"#play: {await result.InnerTextAsync()}");
+        await page.WaitForFunctionAsync("() => { const v = document.getElementById('video'); return v && v.videoWidth === 160 && v.currentTime > 0.2; }");
+        StringAssert.StartsWith(await page.Locator("#video").GetAttributeAsync("src"), "blob:");
+        Assert.IsLessThan(5, double.Parse(Regex.Match(await result.InnerTextAsync(), "grew by ([0-9.]+) MB").Groups[1].Value, CultureInfo.InvariantCulture));
+        await page.ClickAsync("#play"); // a second play replaces the first
+        await page.WaitForFunctionAsync("() => { const v = document.getElementById('video'); return v && v.currentTime > 0.2 && !v.error; }");
+        await page.CloseAsync();
+        Assert.IsEmpty(errors, string.Join(" | ", errors));
+    }
+
+    [TestMethod]
     public async Task OwnFile_IsSavedUnchanged()
     {
         var bytes = new byte[8 * 1048576 + 123];
