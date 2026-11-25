@@ -49,6 +49,7 @@
         await builder.AllAcceleratorsAsync();
         context = builder.ToContext();
         accelerator = await context.CreatePreferredAcceleratorAsync();
+        await LoadSavedShaders();
         session = await InferenceSession.CreateFromFileAsync(accelerator, Http, "mobilenetv2-7.onnx");
         classifier = new ClassificationPipeline(session, accelerator);
     }
@@ -69,6 +70,7 @@
             var timer = Stopwatch.StartNew();
             answers = await classifier!.ClassifyAsync(data, pixels.Width, pixels.Height, topK: 3);
             status = $"Done in {timer.ElapsedMilliseconds} ms on {accelerator!.AcceleratorType}{(firstPhoto ? ", including getting the GPU ready. Try another." : ".")}";
+            if (firstPhoto) await SaveShaders();
             firstPhoto = false;
         }
         catch (Exception ex)
@@ -76,6 +78,38 @@
             status = $"That did not work: {ex.Message}";
         }
         busy = false;
+    }
+
+    // Getting a WebGPU device ready means generating shader code. Keep it, so the next visit starts faster.
+    const string ShaderFile = "shaders.json";
+
+    async Task LoadSavedShaders()
+    {
+        try
+        {
+            using var navigator = new Navigator();
+            using var storage = navigator.Storage;
+            using var folder = await storage.GetDirectory();
+            using var handle = await folder.GetFileHandle(ShaderFile);
+            using var file = await handle.GetFile();
+            ShaderArtifactSerializer.ImportCache(await file.Text());
+        }
+        catch { } // nothing saved yet, or it cannot be used: the shaders are generated as usual
+    }
+
+    async Task SaveShaders()
+    {
+        try
+        {
+            using var navigator = new Navigator();
+            using var storage = navigator.Storage;
+            using var folder = await storage.GetDirectory();
+            using var handle = await folder.GetFileHandle(ShaderFile, create: true);
+            using var target = await handle.CreateWritable();
+            await target.Write(ShaderArtifactSerializer.ExportCache());
+            await target.Close();
+        }
+        catch { } // storage is full or blocked: only the next visit is slower
     }
 
     // The browser decodes the photo. Its pixels go to the GPU without becoming a .NET array.
