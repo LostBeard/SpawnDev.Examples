@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SpawnDev.ILGPU" Version="5.4.49" />
+    <!-- The same source file the browser app uses. -->
+    <Compile Include="..\GpuKernel\Mandelbrot.cs" />
+  </ItemGroup>
+
+</Project>
