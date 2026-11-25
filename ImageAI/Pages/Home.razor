@@ -1,0 +1,124 @@
+@page "/"
+@using System.Diagnostics
+@using ILGPU
+@using ILGPU.Runtime
+@using SpawnDev.ILGPU
+@using SpawnDev.ILGPU.ML
+@using SpawnDev.ILGPU.ML.Pipelines
+@inject SpawnJSRuntime JS
+@inject HttpClient Http
+@implements IDisposable
+
+<main>
+    <h1>What is in this photo?</h1>
+    <p>The AI model runs on this device. Your photo is not uploaded anywhere. The first photo takes longer: it downloads the model (14 MB) and gets your GPU ready for it.</p>
+    <p><label>Your photo: <input id="pick" type="file" accept="image/*" disabled="@busy" @onchange="UseChosenPhoto" /></label></p>
+    <button id="panda" disabled="@busy" @onclick='() => UseSample("red-panda.jpg")'>Try a red panda</button>
+    <button id="dog" disabled="@busy" @onclick='() => UseSample("labrador.jpg")'>Try a dog</button>
+    <p id="status" role="status">@status</p>
+    @if (photoUrl is not null)
+    {
+        <img src="@photoUrl" alt="The photo being looked at" />
+    }
+    <ol id="answers">
+        @foreach (var answer in answers)
+        {
+            <li>@answer.Label: @answer.Confidence.ToString("P0")</li>
+        }
+    </ol>
+    <p><small>Sample photos: Wikimedia Commons, CC0. Model: MobileNetV2 from the ONNX Model Zoo, Apache-2.0.</small></p>
+</main>
+
+@code {
+    bool busy;
+    bool firstPhoto = true;
+    string status = "";
+    string? photoUrl;
+    ClassificationResult[] answers = [];
+    Context? context;
+    Accelerator? accelerator;
+    InferenceSession? session;
+    ClassificationPipeline? classifier;
+
+    async Task LoadModel()
+    {
+        if (classifier is not null) return;
+        status = "Loading the model...";
+        StateHasChanged();
+        var builder = MLContext.Create();
+        await builder.AllAcceleratorsAsync();
+        context = builder.ToContext();
+        accelerator = await context.CreatePreferredAcceleratorAsync();
+        session = await InferenceSession.CreateFromFileAsync(accelerator, Http, "mobilenetv2-7.onnx");
+        classifier = new ClassificationPipeline(session, accelerator);
+    }
+
+    async Task Look(Blob photo)
+    {
+        busy = true;
+        answers = [];
+        ShowPhoto(photo);
+        try
+        {
+            await LoadModel();
+            status = firstPhoto ? "Getting the GPU ready. First photo only..." : "Looking...";
+            StateHasChanged();
+            await Task.Delay(50); // let the page draw
+            using var pixels = await GetPixels(photo);
+            using var data = pixels.Data;
+            var timer = Stopwatch.StartNew();
+            answers = await classifier!.ClassifyAsync(data, pixels.Width, pixels.Height, topK: 3);
+            status = $"Done in {timer.ElapsedMilliseconds} ms on {accelerator!.AcceleratorType}{(firstPhoto ? ", including getting the GPU ready. Try another." : ".")}";
+            firstPhoto = false;
+        }
+        catch (Exception ex)
+        {
+            status = $"That did not work: {ex.Message}";
+        }
+        busy = false;
+    }
+
+    // The browser decodes the photo. Its pixels go to the GPU without becoming a .NET array.
+    async Task<ImageData> GetPixels(Blob photo)
+    {
+        using var window = new Window();
+        using var bitmap = await window.CreateImageBitmap(photo);
+        using var canvas = new HTMLCanvasElement();
+        canvas.Width = (int)bitmap.Width;
+        canvas.Height = (int)bitmap.Height;
+        using var drawing = canvas.Get2DContext();
+        drawing.DrawImage(bitmap, 0, 0, canvas.Width, canvas.Height);
+        return drawing.GetImageData(0, 0, canvas.Width, canvas.Height);
+    }
+
+    async Task UseChosenPhoto()
+    {
+        using var document = JS.GetDocument()!;
+        using var input = document.GetElementById<HTMLInputElement>("pick")!;
+        using var files = input.Files;
+        using var photo = files?.FirstOrDefault();
+        if (photo is not null) await Look(photo);
+    }
+
+    async Task UseSample(string url)
+    {
+        using var response = await JS.Fetch(url);
+        using var photo = await response.Blob();
+        await Look(photo);
+    }
+
+    void ShowPhoto(Blob photo)
+    {
+        if (photoUrl is not null) URL.RevokeObjectURL(photoUrl);
+        photoUrl = URL.CreateObjectURL(photo);
+    }
+
+    public void Dispose()
+    {
+        if (photoUrl is not null) URL.RevokeObjectURL(photoUrl);
+        classifier?.Dispose();
+        session?.Dispose();
+        accelerator?.Dispose();
+        context?.Dispose();
+    }
+}

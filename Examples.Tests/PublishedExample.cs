@@ -22,6 +22,7 @@ static class PublishedExample
         var files = new PhysicalFileProvider(root);
         var types = new FileExtensionContentTypeProvider();
         types.Mappings[".dat"] = "application/octet-stream";
+        types.Mappings[".onnx"] = "application/octet-stream";
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ContentTypeProvider = types });
         await app.StartAsync();
