@@ -109,7 +109,7 @@
     // Even the download stays in the browser: the response becomes a Blob, not a byte[].
     async Task<Blob> GetSampleVideo()
     {
-        using var response = await JS.CallAsync<string, Response>("fetch", "BigBuckBunny-30.mp4");
+        using var response = await JS.Fetch("BigBuckBunny-30.mp4");
         if (!response.Ok) throw new Exception("no sample video found, choose a file instead");
         return await response.Blob();
     }
