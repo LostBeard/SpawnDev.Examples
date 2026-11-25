@@ -50,18 +50,21 @@
         await accelerator!.SynchronizeAsync();
         timer.Stop();
         await renderer!.PresentAsync(image);
-        Finish($"{accelerator.AcceleratorType}: {timer.Elapsed.TotalMilliseconds:F0} ms");
+        Finish($"GPU ({accelerator.AcceleratorType}): {timer.Elapsed.TotalMilliseconds:F0} ms");
     }
 
     async Task DrawOnPage()
     {
         await Start();
+        await SetUpGpu(); // only to show the finished picture
         var timer = Stopwatch.StartNew();
         var pixels = new uint[Width * Height];
         for (var y = 0; y < Height; y++)
             for (var x = 0; x < Width; x++)
                 pixels[y * Width + x] = Mandelbrot.Color(x, y, Width, Height, MaxSteps);
         timer.Stop();
+        image!.View.BaseView.CopyFromCPU(pixels);
+        await renderer!.PresentAsync(image);
         Finish($"Page: {timer.Elapsed.TotalMilliseconds:F0} ms");
     }
 
