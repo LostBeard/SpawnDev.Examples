@@ -1,0 +1,88 @@
+@page "/"
+@using System.Diagnostics
+@using ILGPU
+@using ILGPU.Runtime
+@using SpawnDev.ILGPU
+@using SpawnDev.ILGPU.Rendering
+@inject SpawnJSRuntime JS
+@implements IDisposable
+
+<main>
+    <h1>Who draws it faster?</h1>
+    <p>Both buttons run the same C# method for every one of @((Width * Height).ToString("N0")) pixels. One runs it on the page, one on your GPU.</p>
+    <button id="cpu" disabled="@busy" @onclick="DrawOnPage">Draw on the page</button>
+    <button id="gpu" disabled="@busy" @onclick="DrawOnGpu">Draw on the GPU</button>
+    <p id="result" role="status">@result</p>
+    <canvas id="canvas" width="@Width" height="@Height"></canvas>
+</main>
+
+@code {
+    const int Width = 1000, Height = 800, MaxSteps = 500;
+    bool busy;
+    string result = "";
+    Context? context;
+    Accelerator? accelerator;
+    ICanvasRenderer? renderer;
+    MemoryBuffer2D<uint, Stride2D.DenseX>? image;
+    Action<Index2D, ArrayView2D<uint, Stride2D.DenseX>, int>? kernel;
+
+    async Task SetUpGpu()
+    {
+        if (kernel is not null) return;
+        context = await Context.CreateAsync(builder => builder.AllAcceleratorsAsync());
+        accelerator = await context.CreatePreferredAcceleratorAsync();
+        image = accelerator.Allocate2DDenseX<uint>(new Index2D(Width, Height));
+        kernel = accelerator.LoadAutoGroupedStreamKernel<Index2D, ArrayView2D<uint, Stride2D.DenseX>, int>(Mandelbrot.Kernel);
+        renderer = CanvasRendererFactory.Create(accelerator);
+        using var canvas = JS.Call<string, HTMLCanvasElement>("document.getElementById", "canvas");
+        renderer.AttachCanvas(canvas);
+        // The first run also compiles the kernel for this GPU, so do it once before timing.
+        kernel(image.IntExtent, image.View, MaxSteps);
+        await accelerator.SynchronizeAsync();
+    }
+
+    async Task DrawOnGpu()
+    {
+        await Start();
+        await SetUpGpu();
+        var timer = Stopwatch.StartNew();
+        kernel!(image!.IntExtent, image.View, MaxSteps);
+        await accelerator!.SynchronizeAsync();
+        timer.Stop();
+        await renderer!.PresentAsync(image);
+        Finish($"{accelerator.AcceleratorType}: {timer.Elapsed.TotalMilliseconds:F0} ms");
+    }
+
+    async Task DrawOnPage()
+    {
+        await Start();
+        var timer = Stopwatch.StartNew();
+        var pixels = new uint[Width * Height];
+        for (var y = 0; y < Height; y++)
+            for (var x = 0; x < Width; x++)
+                pixels[y * Width + x] = Mandelbrot.Color(x, y, Width, Height, MaxSteps);
+        timer.Stop();
+        Finish($"Page: {timer.Elapsed.TotalMilliseconds:F0} ms");
+    }
+
+    async Task Start()
+    {
+        busy = true;
+        result = "Drawing...";
+        await Task.Delay(50); // let the page draw
+    }
+
+    void Finish(string message)
+    {
+        result = message;
+        busy = false;
+    }
+
+    public void Dispose()
+    {
+        image?.Dispose();
+        renderer?.Dispose();
+        accelerator?.Dispose();
+        context?.Dispose();
+    }
+}
