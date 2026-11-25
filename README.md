@@ -7,6 +7,7 @@ Small, complete projects for the articles on [spawndev.com](https://www.spawndev
 | [BrowserApis](BrowserApis) | Screen wake lock, page visibility and clipboard from C# with [SpawnDev.SpawnJS](https://github.com/LostBeard/SpawnDev.SpawnJS) | [Open](https://lostbeard.github.io/SpawnDev.Examples/BrowserApis/) |
 | [WebWorkers](WebWorkers) | Slow C# in a Web Worker with [SpawnDev.SpawnJS.WebWorkers](https://github.com/LostBeard/SpawnDev.SpawnJS.WebWorkers) | [Open](https://lostbeard.github.io/SpawnDev.Examples/WebWorkers/) |
 | [LargeFiles](LargeFiles) | Stream a large file to browser storage without .NET memory, with [SpawnDev.SpawnJS](https://github.com/LostBeard/SpawnDev.SpawnJS) | [Open](https://lostbeard.github.io/SpawnDev.Examples/LargeFiles/) |
+| [GpuKernel](GpuKernel) | One C# GPU kernel in Blazor and on the [desktop](GpuKernel.Desktop), with [SpawnDev.ILGPU](https://github.com/LostBeard/SpawnDev.ILGPU) | [Open](https://lostbeard.github.io/SpawnDev.Examples/GpuKernel/) |
 
 ## Run an example
 
@@ -24,6 +25,7 @@ dotnet run
 dotnet publish BrowserApis -c Release -o _publish/BrowserApis
 dotnet publish WebWorkers -c Release -o _publish/WebWorkers
 dotnet publish LargeFiles -c Release -o _publish/LargeFiles
+dotnet publish GpuKernel -c Release -o _publish/GpuKernel
 dotnet build Examples.Tests
 pwsh Examples.Tests/bin/Debug/net10.0/playwright.ps1 install chromium
 dotnet test Examples.Tests
