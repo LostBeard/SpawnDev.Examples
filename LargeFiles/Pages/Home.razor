@@ -3,7 +3,8 @@
 
 <main>
     <h1>Where does the file go?</h1>
-    <p>Both buttons save the same @SizeMB MB test file to this browser's private storage, then delete it. Watch how much .NET memory each one takes.</p>
+    <p>Both buttons save the same file to this browser's private storage, then delete it. Compare how much .NET memory each one takes.</p>
+    <p><label>Your own file, or leave empty for a @SizeMB MB test file: <input id="pick" type="file" /></label></p>
     <button id="copy" disabled="@busy" @onclick="() => Run(SaveThroughDotNet)">Save through .NET</button>
     <button id="stream" disabled="@busy" @onclick="() => Run(SaveStream)">Stream it</button>
     <p id="result" role="status">@result</p>
@@ -41,7 +42,7 @@
         await Task.Delay(50); // let the page draw
         try
         {
-            using var file = MakeTestFile();
+            using var file = GetChosenFile() ?? MakeTestFile();
             using var navigator = new Navigator();
             using var storage = navigator.Storage;
             using var folder = await storage.GetDirectory();
@@ -53,7 +54,7 @@
             var after = await save(file, target);
 
             using var saved = await handle.GetFile();
-            result = $"Saved {saved.Size / 1048576} MB. .NET memory grew by {Math.Max(0, after - before) / 1048576.0:F1} MB.";
+            result = $"Saved {saved.Size / 1048576.0:F1} MB. .NET memory grew by {Math.Max(0, after - before) / 1048576.0:F1} MB.";
             await folder.RemoveEntry(FileName);
         }
         catch (Exception ex)
@@ -62,6 +63,14 @@
         }
         GC.Collect();
         busy = false;
+    }
+
+    Blob? GetChosenFile()
+    {
+        using var document = JS.GetDocument()!;
+        using var input = document.GetElementById<HTMLInputElement>("pick")!;
+        using var files = input.Files;
+        return files?.FirstOrDefault();
     }
 
     // One MB of data, repeated. The browser holds it; nothing large is made in .NET.
