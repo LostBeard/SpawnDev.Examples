@@ -4,9 +4,9 @@
 @using ILGPU.Runtime
 @using SpawnDev.ILGPU
 @using SpawnDev.ILGPU.ML
+@using SpawnDev.ILGPU.ML.Hub
 @using SpawnDev.ILGPU.ML.Pipelines
 @inject SpawnJSRuntime JS
-@inject HttpClient Http
 @implements IDisposable
 
 <main>
@@ -50,7 +50,11 @@
         context = builder.ToContext();
         accelerator = await context.CreatePreferredAcceleratorAsync();
         await LoadSavedShaders();
-        session = await InferenceSession.CreateFromFileAsync(accelerator, Http, "mobilenetv2-7.onnx");
+        // The browser downloads the model into its own storage, and the weights go from there to the GPU.
+        using var hub = new ModelHub(JS);
+        using var stream = await hub.OpenStreamFromUrlAsync(JS.AppBaseUri + "mobilenetv2-7.onnx")
+            ?? throw new Exception("this browser has no storage for the model");
+        session = await InferenceSession.CreateFromStreamAsync(accelerator, stream);
         classifier = new ClassificationPipeline(session, accelerator);
     }
 

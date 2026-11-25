@@ -28,7 +28,7 @@ static class PublishedExample
         app.Use(async (ctx, next) =>
         {
             var file = files.GetFileInfo(ctx.Request.Path.Value ?? "");
-            if (!file.Exists || !file.Name.EndsWith(".onnx")) { await next(); return; }
+            if (!file.Exists || !file.Name.EndsWith(".onnx") || ctx.Request.Headers.Range.Count > 0) { await next(); return; } // browsers ask for ranges uncompressed
             using var body = new MemoryStream();
             await using (var gzip = new GZipStream(body, onnx, leaveOpen: true))
             await using (var source = file.CreateReadStream())
