@@ -78,8 +78,18 @@ public sealed class LargeFilesTests
         page.PageError += (_, e) => errors.Add(e);
         page.Console += (_, m) => { if (m.Type == "error") errors.Add(m.Text); };
         await page.GotoAsync(_app.Urls.First());
+        // No file chosen: the sample clip. Playwright's Chromium has no H.264, so this checks the stored bytes, not playback.
         await page.ClickAsync("#play");
-        await Assertions.Expect(page.Locator("#result")).ToHaveTextAsync("Choose a video file first.");
+        await Assertions.Expect(page.Locator("#result")).ToContainTextAsync("Playing 13.8 MB from storage", new() { Timeout = 30000 });
+        Console.WriteLine($"#play sample: {await page.InnerTextAsync("#result")}");
+        Assert.IsTrue(await page.EvaluateAsync<bool>("""
+            async () => {
+                const hash = async b => [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].join();
+                const stored = await (await (await (await navigator.storage.getDirectory()).getFileHandle('video')).getFile()).arrayBuffer();
+                return await hash(stored) === await hash(await (await fetch('BigBuckBunny-30.mp4')).arrayBuffer());
+            }
+            """), "stored clip differs from the served one");
+        Assert.IsLessThan(5, double.Parse(Regex.Match(await page.InnerTextAsync("#result"), "grew by ([0-9.]+) MB").Groups[1].Value, CultureInfo.InvariantCulture));
         // A real video, recorded by the browser from a canvas.
         var base64 = await page.EvaluateAsync<string>("""
             async () => {
@@ -106,7 +116,7 @@ public sealed class LargeFilesTests
         await page.Locator("#pick").SetInputFilesAsync(new FilePayload { Name = "clip.webm", MimeType = "video/webm", Buffer = Convert.FromBase64String(base64) });
         await page.ClickAsync("#play");
         var result = page.Locator("#result");
-        await Assertions.Expect(result).ToContainTextAsync("from storage");
+        await Assertions.Expect(result).ToContainTextAsync("Playing 0.");
         Console.WriteLine($"#play: {await result.InnerTextAsync()}");
         await page.WaitForFunctionAsync("() => { const v = document.getElementById('video'); return v && v.videoWidth === 160 && v.currentTime > 0.2; }");
         StringAssert.StartsWith(await page.Locator("#video").GetAttributeAsync("src"), "blob:");

@@ -31,4 +31,4 @@ dotnet test Examples.Tests
 
 ## License
 
-MIT
+MIT, except `LargeFiles/wwwroot/BigBuckBunny-30.mp4`: Big Buck Bunny (c) 2008 Blender Foundation, [peach.blender.org](https://peach.blender.org), Sunflower version by Janus Bager Kristensen (2013), 30 second clip, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).

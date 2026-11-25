@@ -10,12 +10,13 @@
     <button id="stream" disabled="@busy" @onclick="() => Run(SaveStream)">Stream it</button>
     <p id="result" role="status">@result</p>
     <h2>Play a video from storage</h2>
-    <p>Choose a video file above. It is saved to storage and played from there.</p>
+    <p>Saves a video to storage and plays it from there. Leave the file above empty to use a 30 second Big Buck Bunny clip.</p>
     <button id="play" disabled="@busy" @onclick="PlayFromStorage">Play it</button>
     @if (videoUrl is not null)
     {
         <p><video id="video" src="@videoUrl" controls autoplay muted></video></p>
     }
+    <p><small>Big Buck Bunny (c) 2008 Blender Foundation, <a href="https://peach.blender.org">peach.blender.org</a>. Sunflower version by Janus Bager Kristensen, 2013. <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</small></p>
 </main>
 
 @code {
@@ -77,16 +78,12 @@
 
     async Task PlayFromStorage()
     {
-        using var file = GetChosenFile();
-        if (file is null)
-        {
-            result = "Choose a video file first.";
-            return;
-        }
         busy = true;
+        result = "Saving...";
         await StopVideo();
         try
         {
+            using var file = GetChosenFile() ?? await GetSampleVideo();
             using var navigator = new Navigator();
             using var storage = navigator.Storage;
             using var folder = await storage.GetDirectory();
@@ -107,6 +104,14 @@
             result = $"Could not play: {ex.Message}";
         }
         busy = false;
+    }
+
+    // Even the download stays in the browser: the response becomes a Blob, not a byte[].
+    async Task<Blob> GetSampleVideo()
+    {
+        using var response = await JS.CallAsync<string, Response>("fetch", "BigBuckBunny-30.mp4");
+        if (!response.Ok) throw new Exception("no sample video found, choose a file instead");
+        return await response.Blob();
     }
 
     // An object URL keeps its file in use until it is revoked.
