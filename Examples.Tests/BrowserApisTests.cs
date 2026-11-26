@@ -26,7 +26,8 @@ public sealed class BrowserApisTests
     [ClassInitialize]
     public static async Task Init(TestContext _)
     {
-        _app = await PublishedExample.StartAsync("BrowserApis");
+        // The same tests run the SpawnJS and the BlazorJS versions of the page.
+        _app = await PublishedExample.StartAsync(Environment.GetEnvironmentVariable("BROWSERAPIS_APP") ?? "BrowserApis");
         _url = _app.Urls.First();
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync();
