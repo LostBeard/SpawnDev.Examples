@@ -1,0 +1,141 @@
+@page "/"
+@using System.Text
+@inject SpawnJSRuntime JS
+@implements IAsyncDisposable
+
+<main>
+    <h1>Serial terminal</h1>
+    <p class="note">
+        Talk to a USB-to-serial device from C# in the browser: an Arduino, a GPS, a telescope.
+        Plug the adapter in, pick a speed, and connect. What the device sends appears below.
+    </p>
+
+    <p id="support" class="note">
+        This browser: Web Serial @(serialSupported ? "available" : "not available"),
+        WebUSB @(usbSupported ? "available" : "not available").
+    </p>
+
+    @if (link is null)
+    {
+        <div class="row">
+            <label>Speed
+                <select id="baud" @bind="baud">
+                    @foreach (var b in bauds) { <option value="@b">@b</option> }
+                </select>
+            </label>
+        </div>
+        <div class="row">
+            <button id="web-serial" disabled="@(!serialSupported)" @onclick="ConnectWebSerial">Connect with Web Serial</button>
+            <button id="web-usb" disabled="@(!usbSupported)" @onclick="ConnectWebUsb">Connect a PL2303 with WebUSB</button>
+        </div>
+        <p class="note">
+            Try Web Serial first: it works with any adapter your computer has a driver for.
+            If its list is empty (we found that on Android phones), use WebUSB: it talks to a Prolific PL2303
+            adapter directly, with a driver written in C#.
+        </p>
+    }
+    else
+    {
+        <p id="connected">Connected to @link.DeviceName over @link.Transport at @baud baud.</p>
+        <div class="row">
+            <input id="send-text" type="text" @bind="toSend" @bind:event="oninput" @onkeydown="SendOnEnter" placeholder="Text to send" />
+            <select id="line-end" @bind="lineEnd">
+                <option value="">no line ending</option>
+                <option value="\r">CR</option>
+                <option value="\n">LF</option>
+                <option value="\r\n">CR LF</option>
+            </select>
+            <button id="send" @onclick="Send">Send</button>
+            <button id="disconnect" @onclick="Disconnect">Disconnect</button>
+        </div>
+    }
+
+    <p id="status" role="status">@status</p>
+    <pre id="output">@output</pre>
+</main>
+
+@code {
+    readonly int[] bauds = [9600, 19200, 38400, 57600, 115200];
+    int baud = 9600;
+    bool serialSupported, usbSupported;
+    ISerialLink? link;
+    string toSend = "", lineEnd = "", status = "", output = "";
+    readonly StringBuilder received = new();
+
+    protected override void OnInitialized()
+    {
+        serialSupported = WebSerialLink.IsSupported(JS);
+        usbSupported = Pl2303UsbLink.IsSupported(JS);
+    }
+
+    async Task ConnectWebSerial() => await Connect(() => WebSerialLink.RequestAsync(JS, baud).ContinueWith(t => (ISerialLink?)t.Result));
+
+    async Task ConnectWebUsb() => await Connect(() => Pl2303UsbLink.RequestAsync(JS, baud).ContinueWith(t => (ISerialLink?)t.Result));
+
+    async Task Connect(Func<Task<ISerialLink?>> open)
+    {
+        status = "";
+        try
+        {
+            link = await open();
+            if (link is null)
+            {
+                status = "No device was chosen. If the list was empty, check the cable, or try the other button.";
+                return;
+            }
+            link.OnData += Link_OnData;
+            link.OnDisconnect += Link_OnDisconnect;
+            status = "Connected.";
+        }
+        catch (Exception ex)
+        {
+            status = "Could not open the device: " + ex.Message;
+            // On a PC, the system's own driver usually holds a USB-to-serial adapter, so WebUSB is refused.
+            if (ex.Message.Contains("Access denied", StringComparison.OrdinalIgnoreCase))
+                status += " The system's driver is using this adapter. Use Web Serial instead: it goes through that driver.";
+            link = null;
+        }
+    }
+
+    void Link_OnData(byte[] bytes)
+    {
+        received.Append(Encoding.ASCII.GetString(bytes));
+        if (received.Length > 20000) received.Remove(0, received.Length - 20000);
+        output = received.ToString();
+        StateHasChanged();
+    }
+
+    void Link_OnDisconnect()
+    {
+        if (link is null) return;
+        link.OnData -= Link_OnData;
+        link.OnDisconnect -= Link_OnDisconnect;
+        link = null;
+        status = "Disconnected.";
+        StateHasChanged();
+    }
+
+    async Task Send()
+    {
+        if (link is null || toSend.Length + lineEnd.Length == 0) return;
+        var text = toSend + lineEnd.Replace("\\r", "\r").Replace("\\n", "\n");
+        await link.WriteAsync(Encoding.ASCII.GetBytes(text));
+        status = $"Sent {text.Length} bytes.";
+        toSend = "";
+    }
+
+    async Task SendOnEnter(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Send();
+    }
+
+    async Task Disconnect()
+    {
+        if (link is { } l) await l.DisposeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (link is { } l) await l.DisposeAsync();
+    }
+}
